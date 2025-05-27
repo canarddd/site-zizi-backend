@@ -1,93 +1,41 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-import os
-import psycopg2
+from collections import defaultdict
 
 app = Flask(__name__)
-CORS(app)
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# Stockage en mémoire des tailles par prénom
+data = defaultdict(list)
 
-def get_connection():
-    if not DATABASE_URL:
-        return None
-    return psycopg2.connect(DATABASE_URL)
-
-@app.route("/ping", methods=["GET"])
-def ping():
+@app.route('/taille', methods=['POST'])
+def ajouter_taille():
+    contenu = request.get_json()
+    prenom = contenu.get('prenom')
+    taille = contenu.get('taille')
+    if not prenom or taille is None:
+        return jsonify({"error": "Paramètres manquants"}), 400
     try:
-        conn = get_connection()
-        if conn:
-            conn.close()
-            return jsonify({"connected": True})
-        else:
-            return jsonify({"connected": False})
-    except Exception as e:
-        print("Erreur DB:", e)
-        return jsonify({"connected": False})
+        taille = float(taille)
+    except ValueError:
+        return jsonify({"error": "Taille non valide"}), 400
 
-@app.route("/add", methods=["POST"])
-def add():
-    try:
-        data = request.get_json()
-        name = data["name"]
-        size = float(data["size"])
+    data[prenom].append(taille)
+    return jsonify({"message": f"Taille ajoutée pour {prenom}"}), 200
 
-        conn = get_connection()
-        if conn:
-            cur = conn.cursor()
-            # Crée la table si elle n'existe pas
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS sizes (
-                    name TEXT,
-                    size FLOAT
-                );
-            """)
-            cur.execute("INSERT INTO sizes (name, size) VALUES (%s, %s);", (name, size))
-            conn.commit()
-            cur.close()
-            conn.close()
-            return jsonify({"status": "success"})
-        else:
-            return jsonify({"status": "no database connection"}), 500
-    except Exception as e:
-        print("Erreur add:", e)
-        return jsonify({"status": "error"}), 500
+@app.route('/stats', methods=['GET'])
+def stats():
+    stats_liste = []
+    for prenom, tailles in data.items():
+        count = len(tailles)
+        avg = sum(tailles) / count if count > 0 else 0
+        stats_liste.append({
+            "prenom": prenom,
+            "count": count,
+            "avgTaille": round(avg, 1)  # arrondi à 1 décimale pour le front
+        })
 
-@app.route("/all", methods=["GET"])
-def all_data():
-    try:
-        conn = get_connection()
-        if not conn:
-            return jsonify([])
+    # Trie par nombre d'utilisations décroissant
+    stats_liste.sort(key=lambda x: x["count"], reverse=True)
+    return jsonify(stats_liste)
 
-        cur = conn.cursor()
-        # Calcul du nombre d'entrées et moyenne par prénom
-        cur.execute("""
-            SELECT
-                name,
-                COUNT(*) AS count,
-                ROUND(AVG(size)::numeric, 2) AS average
-            FROM sizes
-            GROUP BY name
-            ORDER BY average DESC;
-        """)
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-
-        result = []
-        for row in rows:
-            result.append({
-                "name": row[0],
-                "count": row[1],
-                "average": float(row[2])
-            })
-        return jsonify(result)
-    except Exception as e:
-        print("Erreur all:", e)
-        return jsonify([]), 500
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    app.run(debug=True, port=3000)
