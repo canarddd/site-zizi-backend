@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 from collections import defaultdict
 
 app = Flask(__name__)
+
+# Stockage en mémoire des tailles par prénom
 data = defaultdict(list)
 
 @app.route('/taille', methods=['POST'])
@@ -28,10 +30,12 @@ def stats():
         stats_liste.append({
             "prenom": prenom,
             "count": count,
-            "avgTaille": round(avg, 1)
+            "avgTaille": round(avg, 1)  # arrondi à 1 décimale pour le front
         })
+
+    # Trie par nombre d'utilisations décroissant
     stats_liste.sort(key=lambda x: x["count"], reverse=True)
     return jsonify(stats_liste)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8080)
+    app.run(debug=True, port=3000)
